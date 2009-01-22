@@ -25,3 +25,79 @@ A quick demo:
     erlang_couchdb:invoke_view({"localhost", 5984}, "iplaywow", "characters", "realm", [{"key", "\"Medivh-US\""}]).
 
 Patches are welcome. For the time being this module should be considered alpha. Support is limited but feel free to contact me via email and submit patches. If you use this module please let me know.
+
+
+couchdb\_lier
+=============
+
+Problem Description
+-------------------
+
+CouchDB is an atomically-accessible Key-Value storage.  It guarantees
+consistency for reading and writing on a per-document basis.
+
+We, however, desire the ability to operate on multiple documents while
+using a consistent database and must not disturb other
+transactions. CouchDB provides no locking.
+
+CouchDB Prerequisites
+---------------------
+
+CouchDB automatically assigns revisions to data records
+(documents). When updating a document, the client must pass the
+current revision identifier within the HTTP PUT request. If this
+revision doesn't match with the revision of the document currently
+stored in CouchDB, the PUT request will be denied.
+
+Additionally, we can use CouchDB's bulk update interface and extend
+this revision consistency to multiple documents at once by writing.
+
+The Approach
+------------
+
+A transaction uses the process dictionary as a document/revision
+cache. Read data is being placed there with document content and
+revision. Document write and delete operations are being delayed until
+the user-provided transaction Fun() has ended. This allows us to
+exploit the bulk update interface and ensure consistency over the
+database.
+
+Write-only documents will always be fetched to retrieve their
+revision.
+
+Because it is important that read but not modified documents are
+consistent with the ones being written, if there are documents to be
+written, the only-read documents will also be written.
+
+If that bulk update request goes wrong, meaning that some data the
+transaction depended on was modified while the transaction ran, we
+clean up and restart everything. This is the same that mnesia
+(although with locking) and ejabberd\_odbc (with sophisticated
+databases behind) do.
+
+Corner Case: No Writes
+----------------------
+
+As an optimization when there are no documents to write no bulk update
+will be done. This imposes that all other users use the bulk update
+interface, too, when modifying multiple documents and the database is
+thus always consistent.
+
+Can't transaction restarting loop forever?
+------------------------------------------
+
+The main doubt is: when there are many writers to the same document,
+won't they always restart each other?
+
+No, because all clients do only one write by using the bulk update
+function. When all clients are disturbing each other, that means no
+writes are being performed, which means at least one client succeeds.
+
+There is a test/couch\_lier\_counter.erl program which uses parallel
+workers to get, increase, and put a counter value. It finishes within
+25 restarted transactions for one worker at 10 workers total. Of
+course, the counter value amounts to the number of workers that
+increased it.
+
+Nevertheless, the goal should be to avoid transaction restarts most of
+the time. Calculate data before and keep transactions short!
