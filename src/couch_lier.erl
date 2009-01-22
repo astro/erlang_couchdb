@@ -90,6 +90,7 @@ read(Db, Id) ->
     [#couchdb_database{server = Server,
 		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
     case get(?DOC(Db, Id)) of
+	%% Unknown
 	undefined ->
 	    {json, Content} =
 		erlang_couchdb:retrieve_document({Server, Port},
@@ -100,14 +101,17 @@ read(Db, Id) ->
 				   rev = Rev,
 				   content = Content}),
 	    Content;
-	#doc{rev = unknown} = Document ->
-	    {json, Content} =
+	%% Will write, but not read yet
+	#doc{rev = unknown,
+	     content = Content} = Document ->
+	    {json, OldContent} =
 		erlang_couchdb:retrieve_document({Server, Port},
 						 atom_to_list(Db),
 						 Id),
-	    Rev = content_rev(Content),
+	    Rev = content_rev(OldContent),
 	    put(?DOC(Db, Id), Document#doc{rev = Rev}),
 	    Content;
+	%% Have read
 	#doc{content = Content} ->
 	    Content
     end.
