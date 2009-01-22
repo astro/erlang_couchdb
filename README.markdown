@@ -113,10 +113,10 @@ Why Use Mnesia to Look Up Databases?
 ------------------------------------
 
 Before any CouchDB request the database server and port are being
-dirty_read from mnesia. This is a bit of overhead, but mnesia provides
-fast real-time queries and the current bottlenecks are the CouchDB
-backend itself and erlang_couchdb creating one HTTP connection per
-request.
+dirty\_read from mnesia. This is a bit of overhead, but mnesia
+provides fast real-time queries and the current bottlenecks are the
+CouchDB backend itself and erlang_couchdb creating one HTTP connection
+per request.
 
 By storing database information in mnesia we are preparing for future
 features of connection pooling and load-balancing.
@@ -128,6 +128,6 @@ The API is being designed to resemble mnesia functionality. The
 transaction functions work like their mnesia
 counterparts. Nevertheless, you cannot replace usage of mnesia by
 search and replace because CouchDB is fundamentally different: data
-records (documents) are always identified by their _id key, are always
-JSON-encoded and possess revisions which must be taken care of when
-using the dirty interface.
+records (documents) are always identified by their \_id key, are
+always JSON-encoded and possess revisions which must be taken care of
+when using the dirty interface.
