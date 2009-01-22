@@ -31,7 +31,9 @@
 -module(couch_lier).
 
 %% API
--export([create_database/3, transaction/1, read/2, write/2, write/3, delete/2]).
+-export([create_database/3,
+	 transaction/1, read/2, write/2, write/3, delete/2,
+	 dirty_read/2, dirty_write/2, dirty_write/3, dirty_delete/2, dirty_delete/3]).
 
 -record(couchdb_database, {name,
 			   server,
@@ -48,9 +50,9 @@
 %%====================================================================
 %% API
 %%====================================================================
+
 %%--------------------------------------------------------------------
-%% Function: 
-%% Description:
+%% Database maintainance
 %%--------------------------------------------------------------------
 
 create_database(Name, Server, Port) ->
@@ -64,6 +66,11 @@ create_database(Name, Server, Port) ->
 						 server = Server,
 						 port = Port})
 	  end).
+
+
+%%--------------------------------------------------------------------
+%% Transactional interface
+%%--------------------------------------------------------------------
 
 transaction(Fun) ->
     transaction(Fun, 1).
@@ -97,10 +104,11 @@ read(Db, Id) ->
 						 atom_to_list(Db),
 						 Id),
 	    Rev = content_rev(Content),
+	    ResultContent = get_content_from_retrieved_document(Content),
 	    put(?DOC(Db, Id), #doc{id = Id,
 				   rev = Rev,
-				   content = Content}),
-	    Content;
+				   content = ResultContent}),
+	    ResultContent;
 	%% Will write, but not read yet
 	#doc{rev = unknown,
 	     content = Content} = Document ->
@@ -144,6 +152,52 @@ delete(Db, Id) ->
     end,
     put(couch_lier_transaction_write, true).
 
+
+%%--------------------------------------------------------------------
+%% Dirty interface
+%%--------------------------------------------------------------------
+
+dirty_read(Db, Id) ->
+    [#couchdb_database{server = Server,
+		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
+    {json, Content} =
+	erlang_couchdb:retrieve_document({Server, Port},
+					 atom_to_list(Db),
+					 Id),
+    get_content_from_retrieved_document(Content).
+
+
+dirty_write(Db, Content) ->
+    {id, Id} = content_id(Content),
+    dirty_write(Db, Id, Content).
+
+%% When updating an existing document, make sure you have its _rev
+dirty_write(Db, Id, Content) ->
+    [#couchdb_database{server = Server,
+		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
+    {json, RContent} =
+	erlang_couchdb:update_document({Server, Port},
+				       atom_to_list(Db),
+				       Id, Content),
+    check_response_error(RContent).
+
+
+dirty_delete(Db, Content) ->
+    {id, Id} = content_id(Content),
+    dirty_delete(Db, Id, Content).
+
+dirty_delete(Db, Id, Content) ->
+    case content_rev(Content) of
+	none ->
+	    already_deleted;
+	Rev ->
+	    [#couchdb_database{server = Server,
+			       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
+	    {json, RContent} =
+		erlang_couchdb:delete_document({Server, Port},
+					       atom_to_list(Db), Id, Rev),
+	    check_response_error(RContent)
+    end.
 
 %%====================================================================
 %% Internal functions
@@ -189,19 +243,11 @@ run_transaction(Fun) ->
 				    end, Documents),
 		      [#couchdb_database{server = Server,
 					 port = Port}] = mnesia:dirty_read(couchdb_database, Db),
-		      {json, {struct, RDoc}} =
+		      {json, RContent} =
 			  erlang_couchdb:create_documents({Server, Port},
 							  atom_to_list(Db),
 							  JSON),
-		      case lists:keysearch(<<"ok">>, 1, RDoc) of
-			  {value, {_, true}} ->
-			      ok;
-			  false ->
-			      case lists:keysearch(<<"error">>, 1, RDoc) of
-				  {value, {_, Reason}} ->
-				      throw({transaction_aborted, Reason})
-			      end
-		      end
+		      check_response_error(RContent)
 	      end, DbDocuments)
     end,
 
@@ -247,4 +293,30 @@ content_rev({struct, Dict}) ->
     case lists:keysearch(<<"_rev">>, 1, Dict) of
 	{value, {_, Rev}} -> Rev;
 	false -> none
+    end.
+
+
+get_content_from_retrieved_document({struct, Dict} = Content) ->
+    case lists:keysearch(<<"error">>, 1, Dict) of
+	%% No error, return as-is
+	false ->
+	    Content;
+	%% Not found, return an empty document
+	{value, {_, <<"not_found">>}} ->
+	    {struct, []};
+	%% Other error
+	{value, {_, Reason}} ->
+	    exit(Reason)
+    end.
+
+
+check_response_error({struct, RDict}) ->
+    case lists:keysearch(<<"ok">>, 1, RDict) of
+	{value, {_, true}} ->
+	    ok;
+	false ->
+	    case lists:keysearch(<<"error">>, 1, RDict) of
+		{value, {_, Reason}} ->
+		    throw({transaction_aborted, Reason})
+	    end
     end.
