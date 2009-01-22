@@ -115,8 +115,8 @@ Why Use Mnesia to Look Up Databases?
 Before any CouchDB request the database server and port are being
 dirty\_read from mnesia. This is a bit of overhead, but mnesia
 provides fast real-time queries and the current bottlenecks are the
-CouchDB backend itself and erlang_couchdb creating one HTTP connection
-per request.
+CouchDB backend itself and erlang\_couchdb creating one HTTP
+connection per request.
 
 By storing database information in mnesia we are preparing for future
 features of connection pooling and load-balancing.
