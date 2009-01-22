@@ -94,24 +94,20 @@ read(Db, Id) ->
 		erlang_couchdb:retrieve_document({Server, Port},
 						 atom_to_list(Db),
 						 Id),
-	    %%io:format("retrieved: ~p~n",[Content]),
-	    {rev, Rev} = content_rev(Content),
+	    Rev = content_rev(Content),
 	    put(?DOC(Db, Id), #doc{id = Id,
 				   rev = Rev,
 				   content = Content}),
 	    Content;
 	#doc{rev = unknown} = Document ->
-	    io:format("read: ~p~n", [Document]),
 	    {json, Content} =
 		erlang_couchdb:retrieve_document({Server, Port},
 						 atom_to_list(Db),
 						 Id),
-	    %%io:format("retrieved: ~p~n",[Content]),
-	    {rev, Rev} = content_rev(Content),
+	    Rev = content_rev(Content),
 	    put(?DOC(Db, Id), Document#doc{rev = Rev}),
 	    Content;
 	#doc{content = Content} ->
-	    %%io:format("read cached: ~p~n", [Content]),
 	    Content
     end.
 
@@ -170,19 +166,7 @@ run_transaction(Fun) ->
 		      [#couchdb_database{server = Server,
 					 port = Port}] = mnesia:dirty_read(couchdb_database, Db),
 		      JSON =
-			  lists:map(
-			    fun(#doc{id = Id,
-				     rev = Rev,
-				     content = {struct, Content1}}) ->
-				    Content2 =
-					lists:keystore(<<"_id">>, 1, Content1,
-						       {<<"_id">>, Id}),
-				    Content3 =
-					lists:keystore(<<"_rev">>, 1, Content2,
-						       {<<"_rev">>, Rev}),
-				    Content3
-			    end, Documents),
-		      %%io:format("JSON: ~p~n",[JSON]),
+			  lists:map(fun doc_update_content/1, Documents),
 		      {json, {struct, RDoc}} =
 			  erlang_couchdb:create_documents({Server, Port},
 							  atom_to_list(Db),
@@ -209,6 +193,23 @@ cleanup_transaction() ->
 	 (_) -> ignore
       end, get()).
 
+
+doc_update_content(#doc{id = Id,
+			rev = Rev,
+			content = {struct, Content1}}) ->
+    Content2 =
+	lists:keystore(<<"_id">>, 1, Content1,
+		       {<<"_id">>, Id}),
+    Content3 = if
+		   is_binary(Rev) ->
+		       lists:keystore(<<"_rev">>, 1, Content2,
+				      {<<"_rev">>, Rev});
+		   true ->
+		       lists:keydelete(<<"_rev">>, 1, Content2)
+	       end,
+    Content3.
+
+
 content_id({struct, Dict}) ->
     case lists:keysearch(<<"_id">>, 1, Dict) of
 	{value, {_, Id}} -> {id, Id};
@@ -217,6 +218,6 @@ content_id({struct, Dict}) ->
 
 content_rev({struct, Dict}) ->
     case lists:keysearch(<<"_rev">>, 1, Dict) of
-	{value, {_, Rev}} -> {rev, Rev};
-	false -> document_without_rev
+	{value, {_, Rev}} -> Rev;
+	false -> none
     end.
