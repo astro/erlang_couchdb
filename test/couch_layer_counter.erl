@@ -33,7 +33,9 @@ run(Db, Host, Port) ->
     {atomic, ?WORKER_COUNT} =
 	couch_layer:transaction(
 	  fun() ->
-		  get_counter_t(Db)
+		  Counter = get_counter_t(Db),
+		  couch_layer:delete(Db, counter),
+		  Counter
 	  end).
 		      
 

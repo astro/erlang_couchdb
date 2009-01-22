@@ -31,7 +31,7 @@
 -module(couch_layer).
 
 %% API
--export([create_database/3, transaction/1, read/2, write/2, write/3]).
+-export([create_database/3, transaction/1, read/2, write/2, write/3, delete/2]).
 
 -record(couchdb_database, {name,
 			   server,
@@ -42,6 +42,7 @@
 -record(doc, {id,
 	      rev = unknown,
 	      must_write = false,
+	      delete = false,
 	      content = {struct, []}}).
 
 %%====================================================================
@@ -127,6 +128,19 @@ write(Db, Id, Content) ->
     end,
     put(couch_layer_transaction_write, true).
 
+delete(Db, Id) ->
+    case get(?DOC(Db, Id)) of
+	undefined ->
+	    put(?DOC(Db, Id), #doc{id = Id,
+				   must_write = true,
+				   delete = true});
+	#doc{} = Doc ->
+	    put(?DOC(Db, Id), Doc#doc{must_write = true,
+				      delete = true})
+    end,
+    put(couch_layer_transaction_write, true).
+
+
 %%====================================================================
 %% Internal functions
 %%====================================================================
@@ -162,11 +176,15 @@ run_transaction(Fun) ->
 		  end, [], get()),
 	    %% Write atomically by database
 	    lists:foreach(
-	      fun({Db, Documents}) ->
+	      fun({Db, Documents1}) ->
+		      Documents =
+			  lists:map(fun doc_update_content/1, Documents1),
+		      JSON =
+			  lists:map(fun(#doc{content = {struct, Content}}) ->
+					    Content
+				    end, Documents),
 		      [#couchdb_database{server = Server,
 					 port = Port}] = mnesia:dirty_read(couchdb_database, Db),
-		      JSON =
-			  lists:map(fun doc_update_content/1, Documents),
 		      {json, {struct, RDoc}} =
 			  erlang_couchdb:create_documents({Server, Port},
 							  atom_to_list(Db),
@@ -196,18 +214,23 @@ cleanup_transaction() ->
 
 doc_update_content(#doc{id = Id,
 			rev = Rev,
-			content = {struct, Content1}}) ->
-    Content2 =
-	lists:keystore(<<"_id">>, 1, Content1,
+			delete = Delete,
+			content = {struct, Content1}} = Document) ->
+    Content2 = case Delete of
+		   false -> Content1;
+		   true -> [{<<"_deleted">>, true}]
+	       end,
+    Content3 =
+	lists:keystore(<<"_id">>, 1, Content2,
 		       {<<"_id">>, Id}),
-    Content3 = if
+    Content4 = if
 		   is_binary(Rev) ->
-		       lists:keystore(<<"_rev">>, 1, Content2,
+		       lists:keystore(<<"_rev">>, 1, Content3,
 				      {<<"_rev">>, Rev});
 		   true ->
-		       lists:keydelete(<<"_rev">>, 1, Content2)
+		       lists:keydelete(<<"_rev">>, 1, Content3)
 	       end,
-    Content3.
+    Document#doc{content = {struct, Content4}}.
 
 
 content_id({struct, Dict}) ->
