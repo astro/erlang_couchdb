@@ -83,7 +83,7 @@ will be done. This imposes that all other users use the bulk update
 interface, too, when modifying multiple documents and the database is
 thus always consistent.
 
-Can't transaction restarting loop forever?
+Can't Transaction Restarting Loop Forever?
 ------------------------------------------
 
 The main doubt is: when there are many writers to the same document,
@@ -95,9 +95,39 @@ writes are being performed, which means at least one client succeeds.
 
 There is a test/couch\_lier\_counter.erl program which uses parallel
 workers to get, increase, and put a counter value. It finishes within
-61 restarted transactions for one worker at 100 workers total. Of
-course, the counter value amounts to the number of workers that
-increased it.
+61 restarted transactions for one worker at 100 workers total. While
+running, CouchDB accounts for much more CPU than our Erlang
+instance. Of course, the counter value amounts to the number of
+workers that increased it.
 
 Nevertheless, the goal should be to avoid transaction restarts most of
 the time. Calculate data before and keep transactions short!
+
+Do not spawn processes or execute network communication/message
+passing in transactions. Think of it as (database-)pure code that must
+have no side-effects. Use the transaction Fun() return value to pass
+data to code outside a transaction. This will avoid bad effects when
+transactions are being restarted.
+
+Why Use Mnesia to Look Up Databases?
+------------------------------------
+
+Before any CouchDB request the database server and port are being
+dirty_read from mnesia. This is a bit of overhead, but mnesia provides
+fast real-time queries and the current bottlenecks are the CouchDB
+backend itself and erlang_couchdb creating one HTTP connection per
+request.
+
+By storing database information in mnesia we are preparing for future
+features of connection pooling and load-balancing.
+
+couch\_lier API
+---------------
+
+The API is being designed to resemble mnesia functionality. The
+transaction functions work like their mnesia
+counterparts. Nevertheless, you cannot replace usage of mnesia by
+search and replace because CouchDB is fundamentally different: data
+records (documents) are always identified by their _id key, are always
+JSON-encoded and possess revisions which must be taken care of when
+using the dirty interface.
