@@ -102,7 +102,7 @@ read(Db, Id) ->
 	    {json, Content} =
 		erlang_couchdb:retrieve_document({Server, Port},
 						 atom_to_list(Db),
-						 Id),
+						 encode_id(Id)),
 	    Rev = content_rev(Content),
 	    ResultContent = get_content_from_retrieved_document(Content),
 	    put(?DOC(Db, Id), #doc{id = Id,
@@ -115,7 +115,7 @@ read(Db, Id) ->
 	    {json, OldContent} =
 		erlang_couchdb:retrieve_document({Server, Port},
 						 atom_to_list(Db),
-						 Id),
+						 encode_id(Id)),
 	    Rev = content_rev(OldContent),
 	    put(?DOC(Db, Id), Document#doc{rev = Rev}),
 	    Content;
@@ -163,7 +163,7 @@ dirty_read(Db, Id) ->
     {json, Content} =
 	erlang_couchdb:retrieve_document({Server, Port},
 					 atom_to_list(Db),
-					 Id),
+					 encode_id(Id)),
     get_content_from_retrieved_document(Content).
 
 
@@ -172,13 +172,13 @@ dirty_write(Db, Content) ->
     dirty_write(Db, Id, Content).
 
 %% When updating an existing document, make sure you have its _rev
-dirty_write(Db, Id, Content) ->
+dirty_write(Db, Id, {struct, Dict}) ->
     [#couchdb_database{server = Server,
 		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
     {json, RContent} =
-	erlang_couchdb:update_document({Server, Port},
+	erlang_couchdb:create_document({Server, Port},
 				       atom_to_list(Db),
-				       Id, Content),
+				       encode_id(Id), Dict),
     check_response_error(RContent).
 
 
@@ -195,7 +195,8 @@ dirty_delete(Db, Id, Content) ->
 			       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
 	    {json, RContent} =
 		erlang_couchdb:delete_document({Server, Port},
-					       atom_to_list(Db), Id, Rev),
+					       atom_to_list(Db),
+					       encode_id(Id), Rev),
 	    check_response_error(RContent)
     end.
 
@@ -260,6 +261,10 @@ cleanup_transaction() ->
 	      erase(Key);
 	 (_) -> ignore
       end, get()).
+
+
+encode_id(Id) ->
+    mochiweb_util:quote_plus(Id).
 
 
 doc_update_content(#doc{id = Id,
