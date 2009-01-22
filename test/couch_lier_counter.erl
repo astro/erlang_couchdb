@@ -1,4 +1,4 @@
--module(couch_layer_counter).
+-module(couch_lier_counter).
 
 -export([run/0, run/3]).
 
@@ -9,11 +9,11 @@ run() ->
     run(counter, "localhost", 5984).
 
 run(Db, Host, Port) ->
-    couch_layer:create_database(Db, Host, Port),
+    couch_lier:create_database(Db, Host, Port),
 
     %% Initialize counter
     {atomic, 0} =
-	couch_layer:transaction(
+	couch_lier:transaction(
 	  fun() ->
 		  set_counter_t(Db, 0),
 		  0
@@ -31,10 +31,10 @@ run(Db, Host, Port) ->
     
     %% Check for value
     {atomic, ?WORKER_COUNT} =
-	couch_layer:transaction(
+	couch_lier:transaction(
 	  fun() ->
 		  Counter = get_counter_t(Db),
-		  couch_layer:delete(Db, counter),
+		  couch_lier:delete(Db, counter),
 		  Counter
 	  end).
 		      
@@ -58,7 +58,7 @@ wait_for_workers(Workers) ->
 
 counter(Db) ->
     {atomic, ok} =
-	couch_layer:transaction(
+	couch_lier:transaction(
 	  fun() ->
 		  Counter = get_counter_t(Db),
 		  set_counter_t(Db, Counter + 1),
@@ -69,7 +69,7 @@ counter(Db) ->
 %% In-transaction getter
 
 get_counter_t(Db) ->
-    case couch_layer:read(Db, counter) of
+    case couch_lier:read(Db, counter) of
 	{struct, []} -> 0;
 	{struct, Doc} ->
 	    {value, {<<"value">>, Counter}} =
@@ -80,4 +80,4 @@ get_counter_t(Db) ->
 %% In-transaction setter
 
 set_counter_t(Db, Counter) ->
-    couch_layer:write(Db, counter, {struct, [{<<"value">>, Counter}]}).
+    couch_lier:write(Db, counter, {struct, [{<<"value">>, Counter}]}).

@@ -25,10 +25,10 @@
 %% @author Stephan Maka <stephan@spaceboyz.net>
 %% @copyright 2009 Stephan Maka
 %% @version 0.2.2
-%% @doc A transactional layer for CouchDB
+%% @doc A transactional lier for CouchDB
 %% 
 %% Updates at http://github.com/astro/erlang_couchdb/
--module(couch_layer).
+-module(couch_lier).
 
 %% API
 -export([create_database/3, transaction/1, read/2, write/2, write/3, delete/2]).
@@ -38,7 +38,7 @@
 			   port}).
 
 -define(MAX_TRANSACTION_RESTARTS, 100).
--define(DOC(Db, Id), {couch_layer_transaction_document, Db, Id}).
+-define(DOC(Db, Id), {couch_lier_transaction_document, Db, Id}).
 -record(doc, {id,
 	      rev = unknown,
 	      must_write = false,
@@ -126,7 +126,7 @@ write(Db, Id, Content) ->
 	    put(?DOC(Db, Id), Doc#doc{must_write = true,
 				      content = Content})
     end,
-    put(couch_layer_transaction_write, true).
+    put(couch_lier_transaction_write, true).
 
 delete(Db, Id) ->
     case get(?DOC(Db, Id)) of
@@ -138,7 +138,7 @@ delete(Db, Id) ->
 	    put(?DOC(Db, Id), Doc#doc{must_write = true,
 				      delete = true})
     end,
-    put(couch_layer_transaction_write, true).
+    put(couch_lier_transaction_write, true).
 
 
 %%====================================================================
@@ -146,11 +146,11 @@ delete(Db, Id) ->
 %%====================================================================
 
 run_transaction(Fun) ->
-    put(couch_layer_transaction_write, false),
+    put(couch_lier_transaction_write, false),
 
     FunResult = Fun(),
 
-    case get(couch_layer_transaction_write) of
+    case get(couch_lier_transaction_write) of
 	false ->
 	    ok;
 	true ->
