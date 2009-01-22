@@ -3,7 +3,7 @@
 -export([run/0, run/3]).
 
 
--define(WORKER_COUNT, 30).
+-define(WORKER_COUNT, 100).
 
 run() ->
     run(counter, "localhost", 5984).

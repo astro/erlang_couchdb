@@ -95,7 +95,7 @@ writes are being performed, which means at least one client succeeds.
 
 There is a test/couch\_lier\_counter.erl program which uses parallel
 workers to get, increase, and put a counter value. It finishes within
-25 restarted transactions for one worker at 10 workers total. Of
+61 restarted transactions for one worker at 100 workers total. Of
 course, the counter value amounts to the number of workers that
 increased it.
 
