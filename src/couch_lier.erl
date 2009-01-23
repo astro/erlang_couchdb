@@ -80,9 +80,9 @@ transaction(_, Try) when Try > ?MAX_TRANSACTION_RESTARTS ->
 
 transaction(Fun, Try) ->
     case catch run_transaction(Fun) of
-	{transaction_aborted, Reason} ->
-	    error_logger:info_msg("Transaction try ~p restarting, reason: ~p~n",
-				  [Try, Reason]),
+	{aborted, <<"conflict">>} ->
+	    error_logger:info_msg("Transaction try ~p restarting because of conflict~n",
+				  [Try]),
 	    cleanup_transaction(),
 	    transaction(Fun, Try + 1);
 	{'EXIT', Reason} ->
@@ -261,6 +261,7 @@ run_transaction(Fun) ->
 
 
 cleanup_transaction() ->
+    erase(couch_lier_transaction_write),
     lists:foreach(
       fun({?DOC(_Db, _Id) = Key, #doc{}}) ->
 	      erase(Key);
@@ -282,7 +283,7 @@ doc_update_content(#doc{id = Id,
 	       end,
     Content3 =
 	lists:keystore(<<"_id">>, 1, Content2,
-		       {<<"_id">>, Id}),
+		       {<<"_id">>, list_to_binary(Id)}),
     Content4 = if
 		   is_binary(Rev) ->
 		       lists:keystore(<<"_rev">>, 1, Content3,
@@ -327,6 +328,6 @@ check_response_error({struct, RDict}) ->
 	false ->
 	    case lists:keysearch(<<"error">>, 1, RDict) of
 		{value, {_, Reason}} ->
-		    throw({transaction_aborted, Reason})
+		    throw({aborted, Reason})
 	    end
     end.

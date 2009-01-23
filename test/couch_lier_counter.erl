@@ -9,6 +9,7 @@ run() ->
     run(counter, "localhost", 5984).
 
 run(Db, Host, Port) ->
+    mnesia:start(),
     couch_lier:create_database(Db, Host, Port),
 
     %% Initialize counter
@@ -34,7 +35,7 @@ run(Db, Host, Port) ->
 	couch_lier:transaction(
 	  fun() ->
 		  Counter = get_counter_t(Db),
-		  couch_lier:delete(Db, counter),
+		  couch_lier:delete(Db, "counter"),
 		  Counter
 	  end).
 		      
@@ -69,7 +70,7 @@ counter(Db) ->
 %% In-transaction getter
 
 get_counter_t(Db) ->
-    case couch_lier:read(Db, counter) of
+    case couch_lier:read(Db, "counter") of
 	{struct, []} -> 0;
 	{struct, Doc} ->
 	    {value, {<<"value">>, Counter}} =
@@ -80,4 +81,4 @@ get_counter_t(Db) ->
 %% In-transaction setter
 
 set_counter_t(Db, Counter) ->
-    couch_lier:write(Db, counter, {struct, [{<<"value">>, Counter}]}).
+    couch_lier:write(Db, "counter", {struct, [{<<"value">>, Counter}]}).
