@@ -93,7 +93,8 @@ transaction(Fun, Try) ->
 	    Result
     end.
 
-read(Db, Id) ->
+read(Db, Id1) ->
+    Id = prepare_id(Id1),
     [#couchdb_database{server = Server,
 		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
     case get(?DOC(Db, Id)) of
@@ -102,7 +103,7 @@ read(Db, Id) ->
 	    {json, Content} =
 		erlang_couchdb:retrieve_document({Server, Port},
 						 atom_to_list(Db),
-						 encode_id(Id)),
+						 binary_to_list(Id)),
 	    Rev = content_rev(Content),
 	    ResultContent = get_content_from_retrieved_document(Content),
 	    put(?DOC(Db, Id), #doc{id = Id,
@@ -115,7 +116,7 @@ read(Db, Id) ->
 	    {json, OldContent} =
 		erlang_couchdb:retrieve_document({Server, Port},
 						 atom_to_list(Db),
-						 encode_id(Id)),
+						 binary_to_list(Id)),
 	    Rev = content_rev(OldContent),
 	    put(?DOC(Db, Id), Document#doc{rev = Rev}),
 	    Content;
@@ -128,7 +129,8 @@ write(Db, Content) ->
     {id, Id} = content_id(Content),
     write(Db, Id, Content).
 
-write(Db, Id, Content) ->
+write(Db, Id1, Content) ->
+    Id = prepare_id(Id1),
     case get(?DOC(Db, Id)) of
 	undefined ->
 	    put(?DOC(Db, Id), #doc{id = Id,
@@ -140,7 +142,8 @@ write(Db, Id, Content) ->
     end,
     put(couch_lier_transaction_write, true).
 
-delete(Db, Id) ->
+delete(Db, Id1) ->
+    Id = prepare_id(Id1),
     case get(?DOC(Db, Id)) of
 	undefined ->
 	    put(?DOC(Db, Id), #doc{id = Id,
@@ -157,13 +160,14 @@ delete(Db, Id) ->
 %% Dirty interface
 %%--------------------------------------------------------------------
 
-dirty_read(Db, Id) ->
+dirty_read(Db, Id1) ->
+    Id = prepare_id(Id1),
     [#couchdb_database{server = Server,
 		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
     {json, Content} =
 	erlang_couchdb:retrieve_document({Server, Port},
 					 atom_to_list(Db),
-					 encode_id(Id)),
+					 binary_to_list(Id)),
     get_content_from_retrieved_document(Content).
 
 
@@ -175,13 +179,14 @@ dirty_write(Db, Content) ->
 %% DO NOT USE THIS FUNCTION unless you already have the document's
 %% _rev and implement conflict handling. You really want to use
 %% write/3 in a transaction/1.
-dirty_write(Db, Id, {struct, Dict}) ->
+dirty_write(Db, Id1, {struct, Dict}) ->
+    Id = prepare_id(Id1),
     [#couchdb_database{server = Server,
 		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
     {json, RContent} =
 	erlang_couchdb:create_document({Server, Port},
 				       atom_to_list(Db),
-				       encode_id(Id), Dict),
+				       Id, Dict),
     check_response_error(RContent).
 
 
@@ -191,7 +196,8 @@ dirty_delete(Db, Content) ->
     dirty_delete(Db, Id, Content).
 
 %% See dirty_write/3
-dirty_delete(Db, Id, Content) ->
+dirty_delete(Db, Id1, Content) ->
+    Id = prepare_id(Id1),
     case content_rev(Content) of
 	none ->
 	    already_deleted;
@@ -201,7 +207,7 @@ dirty_delete(Db, Id, Content) ->
 	    {json, RContent} =
 		erlang_couchdb:delete_document({Server, Port},
 					       atom_to_list(Db),
-					       encode_id(Id), Rev),
+					       Id, Rev),
 	    check_response_error(RContent)
     end.
 
@@ -269,8 +275,12 @@ cleanup_transaction() ->
       end, get()).
 
 
-encode_id(Id) ->
-    mochiweb_util:quote_plus(Id).
+prepare_id(Id) when is_binary(Id) ->
+    Id;
+prepare_id(Id) when is_atom(Id) ->
+    list_to_binary(atom_to_list(Id));
+prepare_id(Id) when is_list(Id) ->
+    list_to_binary(mochiweb_util:quote_plus(Id)).
 
 
 doc_update_content(#doc{id = Id,
@@ -283,7 +293,7 @@ doc_update_content(#doc{id = Id,
 	       end,
     Content3 =
 	lists:keystore(<<"_id">>, 1, Content2,
-		       {<<"_id">>, list_to_binary(Id)}),
+		       {<<"_id">>, Id}),
     Content4 = if
 		   is_binary(Rev) ->
 		       lists:keystore(<<"_rev">>, 1, Content3,
