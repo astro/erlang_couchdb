@@ -167,11 +167,14 @@ dirty_read(Db, Id) ->
     get_content_from_retrieved_document(Content).
 
 
+%% See dirty_write/3
 dirty_write(Db, Content) ->
     {id, Id} = content_id(Content),
     dirty_write(Db, Id, Content).
 
-%% When updating an existing document, make sure you have its _rev
+%% DO NOT USE THIS FUNCTION unless you have the document's _rev and
+%% implement conflict handling. You really want to use write/3 in a
+%% transaction/1.
 dirty_write(Db, Id, {struct, Dict}) ->
     [#couchdb_database{server = Server,
 		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
@@ -182,10 +185,12 @@ dirty_write(Db, Id, {struct, Dict}) ->
     check_response_error(RContent).
 
 
+%% See dirty_write/3
 dirty_delete(Db, Content) ->
     {id, Id} = content_id(Content),
     dirty_delete(Db, Id, Content).
 
+%% See dirty_write/3
 dirty_delete(Db, Id, Content) ->
     case content_rev(Content) of
 	none ->
