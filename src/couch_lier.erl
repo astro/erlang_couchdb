@@ -95,28 +95,19 @@ transaction(Fun, Try) ->
 
 read(Db, Id1) ->
     Id = prepare_id(Id1),
-    [#couchdb_database{server = Server,
-		       port = Port}] = mnesia:dirty_read(couchdb_database, Db),
     case get(?DOC(Db, Id)) of
 	%% Unknown
 	undefined ->
-	    {json, Content} =
-		erlang_couchdb:retrieve_document({Server, Port},
-						 atom_to_list(Db),
-						 binary_to_list(Id)),
+	    Content = dirty_read(Db, Id),
 	    Rev = content_rev(Content),
-	    ResultContent = get_content_from_retrieved_document(Content),
 	    put(?DOC(Db, Id), #doc{id = Id,
 				   rev = Rev,
-				   content = ResultContent}),
-	    ResultContent;
+				   content = Content}),
+	    Content;
 	%% Will write, but not read yet
 	#doc{rev = unknown,
 	     content = Content} = Document ->
-	    {json, OldContent} =
-		erlang_couchdb:retrieve_document({Server, Port},
-						 atom_to_list(Db),
-						 binary_to_list(Id)),
+	    OldContent = dirty_read(Db, Id),
 	    Rev = content_rev(OldContent),
 	    put(?DOC(Db, Id), Document#doc{rev = Rev}),
 	    Content;
