@@ -116,6 +116,7 @@ read(Db, Id1) ->
 	    Content
     end.
 
+%% In this case without an _id make sure the document wasn't empty.
 write(Db, Content) ->
     {id, Id} = content_id(Content),
     write(Db, Id, Content).
@@ -177,7 +178,7 @@ dirty_write(Db, Id1, {struct, Dict}) ->
     {json, RContent} =
 	erlang_couchdb:create_document({Server, Port},
 				       atom_to_list(Db),
-				       Id, Dict),
+				       binary_to_list(Id), Dict),
     check_response_error(RContent).
 
 
@@ -198,7 +199,7 @@ dirty_delete(Db, Id1, Content) ->
 	    {json, RContent} =
 		erlang_couchdb:delete_document({Server, Port},
 					       atom_to_list(Db),
-					       Id, Rev),
+					       binary_to_list(Id), Rev),
 	    check_response_error(RContent)
     end.
 
@@ -246,6 +247,7 @@ run_transaction(Fun) ->
 				    end, Documents),
 		      [#couchdb_database{server = Server,
 					 port = Port}] = mnesia:dirty_read(couchdb_database, Db),
+		      %% TODO: check if one document only
 		      {json, RContent} =
 			  erlang_couchdb:create_documents({Server, Port},
 							  atom_to_list(Db),
@@ -271,7 +273,9 @@ prepare_id(Id) when is_binary(Id) ->
 prepare_id(Id) when is_atom(Id) ->
     list_to_binary(atom_to_list(Id));
 prepare_id(Id) when is_list(Id) ->
-    list_to_binary(mochiweb_util:quote_plus(Id)).
+    list_to_binary(Id).
+%%     io:format("quoting: ~p -> ~p~n",[Id,mochiweb_util:quote_plus(Id)]),
+%%     list_to_binary(mochiweb_util:quote_plus(Id)).
 
 
 doc_update_content(#doc{id = Id,
