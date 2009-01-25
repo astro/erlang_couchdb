@@ -9,6 +9,7 @@ run() ->
     run(counter, "localhost", 5984).
 
 run(Db, Host, Port) ->
+    Time1 = current_timestamp(),
     mnesia:start(),
     couch_lier:create_database(Db, Host, Port),
 
@@ -37,7 +38,9 @@ run(Db, Host, Port) ->
 		  Counter = get_counter_t(Db),
 		  couch_lier:delete(Db, "counter"),
 		  Counter
-	  end).
+	  end),
+    Time2 = current_timestamp(),
+    {Time2 - Time1, us}.
 		      
 
 wait_for_workers([]) ->
@@ -82,3 +85,9 @@ get_counter_t(Db) ->
 
 set_counter_t(Db, Counter) ->
     couch_lier:write(Db, "counter", {struct, [{<<"value">>, Counter}]}).
+
+
+current_timestamp() ->
+    {MS, S, SS} = now(),
+    (MS * 1000000 + S) * 1000000 + SS.
+			    
