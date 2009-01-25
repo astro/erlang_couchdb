@@ -72,47 +72,14 @@
 %% Instead of using ibrowse or http:request/4, this module uses
 %% gen_tcp:connect/3. Using ibrowse requires more dependancies and inets can
 %% create bottlenecks.
-raw_request(Type, Server, Port, URI, Body) ->
-    {ok, Socket} = gen_tcp:connect(Server, Port, [binary, {active, false}, {packet, 0}]),
-    Req = build_request(Type, URI, Body),
-    gen_tcp:send(Socket, Req),
-    {ok, Resp} = do_recv(Socket, []),
-    gen_tcp:close(Socket),
-    {ok,_, ResponseBody} = erlang:decode_packet(http, Resp, []),
-    decode_json(parse_response(ResponseBody)).
+raw_request(Method, Server, Port, URI, Body) ->
+    URL = lists:flatten(io_lib:format("http://~s:~B~s",
+				      [Server, Port, URI])),
+    {ok, _Status, _ResponseHeaders, ResponseBody} =
+	ibrowse:send_req(URL, [{"Content-Type", "application/json"}],
+			 Method, Body),
+    decode_json(ResponseBody).
 
-do_recv(Sock, Bs) ->
-    case gen_tcp:recv(Sock, 0) of
-        {ok, B} ->
-            do_recv(Sock, [Bs | B]);
-        {error, closed} ->
-            {ok, erlang:iolist_to_binary(Bs)}
-    end.
-
-%% @private
-%% For a given http response, disregard everything up to the first new line
-%% which should be the response body. 99.999% of the time we don't care
-%% about the response code or headers. Any sort of error will surface as
-%% a parse error in mochijson2:decode/1.
-parse_response(<<13,10,13,10,Data/binary>>) -> binary_to_list(Data);
-parse_response(<<_X:1/binary,Data/binary>>) -> parse_response(Data).
-
-%% @private
-%% Build the HTTP 1.0 request for the Type of request, the URI and
-%% optionally a body. If there is a body then find it's length and send that
-%% as well. The content-type is hard-coded because this client will never
-%% send anything other than json.
-build_request(Type, URI, []) ->
-    list_to_binary(lists:concat([Type, " ", URI, " HTTP/1.0\r\nContent-Type: application/json\r\n\r\n"]));
-
-build_request(Type, URI, Body) ->
-    erlang:iolist_to_binary([
-        lists:concat([Type, " ", URI, " HTTP/1.0\r\n"
-            "Content-Length: ", erlang:iolist_size(Body), "\r\n"
-            "Content-Type: application/json\r\n\r\n"
-        ]),
-        Body
-    ]).
 
 %% @private
 %% The build_uri/0, /1, /2, /3 and view_uri/4 functions are used to create
@@ -164,26 +131,26 @@ decode_json(Body) ->
 %% @doc Create a new database.
 create_database({Server, ServerPort}, Database) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(Database),
-    raw_request("PUT", Server, ServerPort, Url, []).
+    raw_request(put, Server, ServerPort, Url, []).
 
 %% @doc Create a new database.
 delete_database({Server, ServerPort}, Database) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(Database),
-    raw_request("DELETE", Server, ServerPort, Url, []).
+    raw_request(delete, Server, ServerPort, Url, []).
 
 %% @doc Get info about a database.
 database_info({Server, ServerPort}, Database) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(Database),
-    raw_request("GET", Server, ServerPort, Url, []).
+    raw_request(get, Server, ServerPort, Url, []).
 
 %% @doc Get info about a server.
 server_info({Server, ServerPort}) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(),
-    raw_request("GET", Server, ServerPort, Url, []).
+    raw_request(get, Server, ServerPort, Url, []).
 
 %% @edoc Retieve all the databases
 retrieve_all_dbs({Server, ServerPort}) when is_list(Server), is_integer(ServerPort) ->
-    raw_request("GET", Server, ServerPort, "/_all_dbs",[]). 
+    raw_request(get, Server, ServerPort, "/_all_dbs",[]). 
 
 			
 
@@ -194,7 +161,7 @@ retrieve_all_dbs({Server, ServerPort}) when is_list(Server), is_integer(ServerPo
 create_document({Server, ServerPort}, Database, Attributes) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(Database),
     JSON = list_to_binary(mochijson2:encode({struct, Attributes})),
-    raw_request("POST", Server, ServerPort, Url, JSON).
+    raw_request(post, Server, ServerPort, Url, JSON).
 
 %% @doc Create a new document with a specific document ID. This is just an
 %% accessor function to update_document/4 when the intent is to create a 
@@ -212,7 +179,7 @@ create_documents({Server, ServerPort}, Database, Documents) when is_list(Server)
         ]}
     ]},
     JSON = list_to_binary(mochijson2:encode(BulkCreate)),
-    raw_request("POST", Server, ServerPort, Url, JSON).
+    raw_request(post, Server, ServerPort, Url, JSON).
 
 %% @doc Return a tuple containing a document id and the document's latest
 %% revision.
@@ -220,7 +187,7 @@ document_revision({Server, ServerPort}, Database, DocID) when is_binary(DocID) -
     document_revision({Server, ServerPort}, Database, binary_to_list(DocID));
 document_revision({Server, ServerPort}, Database, DocID) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(Database, DocID, []),
-    JSON = raw_request("GET", Server, ServerPort, Url, []),
+    JSON = raw_request(get, Server, ServerPort, Url, []),
     case JSON of
         {json, {struct, Props}} ->
             {ok, proplists:get_value(<<"_id">>, Props), proplists:get_value(<<"_rev">>, Props)};
@@ -236,7 +203,7 @@ retrieve_document({Server, ServerPort}, Database, DocID) ->
 %% should be a list of non binary key/value pair tuples.
 retrieve_document({Server, ServerPort}, Database, DocID, Attributes) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(Database, DocID, Attributes),
-    raw_request("GET", Server, ServerPort, Url, []).
+    raw_request(get, Server, ServerPort, Url, []).
 
 %% @doc Sets the attributes for a document with an idea. This function is a
 %% bit misleading because it can be used to update an existing document
@@ -246,12 +213,12 @@ retrieve_document({Server, ServerPort}, Database, DocID, Attributes) when is_lis
 update_document({Server, ServerPort}, Database, DocID, Attributes) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(Database, DocID),
     JSON = list_to_binary(mochijson2:encode({struct, Attributes})),
-    raw_request("PUT", Server, ServerPort, Url, JSON).
+    raw_request(put, Server, ServerPort, Url, JSON).
 
 %% @doc Deletes a given document by id and revision.
 delete_document({Server, ServerPort}, Database, DocID, Revision) when is_list(Server), is_integer(ServerPort) ->
     Url = build_uri(Database, DocID, [{"rev", Revision}]),
-    raw_request("DELETE", Server, ServerPort, Url, []).
+    raw_request(delete, Server, ServerPort, Url, []).
 
 %% @doc Delete a bunch of documents with a _bulk_docs request.
 delete_documents({Server, ServerPort}, Database, Documents) when is_list(Server), is_integer(ServerPort) ->
@@ -262,7 +229,7 @@ delete_documents({Server, ServerPort}, Database, Documents) when is_list(Server)
         ]}
     ]},
     JSON = list_to_binary(mochijson2:encode(BulkDelete)),
-    raw_request("POST", Server, ServerPort, Url, JSON).
+    raw_request(post, Server, ServerPort, Url, JSON).
 
 %% @doc Creates a design document. See create_view/6 for more.
 create_view({Server, ServerPort}, Database, ViewClass, Language, Views) ->
@@ -289,12 +256,12 @@ create_view({Server, ServerPort}, Database, ViewClass, Language, Views, Attribut
     | Attributes],
     JSON = list_to_binary(mochijson2:encode({struct, Design})),
     Url = build_uri(Database, "_design/" ++ ViewClass),
-    raw_request("PUT", Server, ServerPort, Url, JSON).
+    raw_request(put, Server, ServerPort, Url, JSON).
 
 %% @doc Executes a view with or without some attributes as modifiers.
 invoke_view({Server, ServerPort}, Database, ViewClass, ViewId, Attributes) when is_list(Server), is_integer(ServerPort) ->
     Url = view_uri(Database, ViewClass, ViewId, Attributes),
-    raw_request("GET", Server, ServerPort, Url, []).
+    raw_request(get, Server, ServerPort, Url, []).
 
 %% @doc Return a list of document ids for a given view.
 parse_view({json, {struct, [{<<"error">>, _Code}, {_, _Reason}]}}) ->
@@ -320,7 +287,7 @@ parse_view(_Other) -> {0, 0, []}.
 fetch_ids({Server, ServerPort}, Limit) ->
     Url = build_uri(lists:concat(["_uuids?count=", Limit])),
     io:format("Url ~p~n", [Url]),
-    raw_request("POST", Server, ServerPort, Url, []).
+    raw_request(post, Server, ServerPort, Url, []).
 
 %% @doc Create a design document based on a file's contents.
 %% Warning! This function is experimental.
